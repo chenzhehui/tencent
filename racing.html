@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>改进的赛车游戏</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #startScreen, #gameOverScreen { 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0,0,0,0.8);
+            padding: 40px;
+            border-radius: 20px;
+            color: white;
+            width: 80%;
+            max-width: 500px;
+        }
+        #startScreen h2, #gameOverScreen h2 {
+            font-size: 36px;
+            margin-bottom: 30px;
+        }
+        #username {
+            font-size: 24px;
+            padding: 10px;
+            width: 100%;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            border: none;
+            box-sizing: border-box;
+        }
+        button {
+            font-size: 24px;
+            padding: 15px 30px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #gameInfo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 18px;
+        }
+        #gameInfo p {
+            margin: 5px 0;
+        }
+        #mobileControls {
+            position: fixed;
+            bottom: 10px; /* 改为 10px */
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            height: 15vh; /* 设置一个固定的高度 */
+        }
+        .controlBtn {
+            background: rgba(255,255,255,0.5);
+            border: none;
+            border-radius: 50%;
+            width: 15vw; /* 使用视口宽度的百分比 */
+            height: 15vw; /* 使用视口宽度的百分比 */
+            max-width: 80px; /* 设置最大宽度 */
+            max-height: 80px; /* 设置最大高度 */
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            touch-action: manipulation;
+        }
+        #boostBtn {
+            background: rgba(255,255,0,0.5);
+            width: 20vw; /* 稍微大一些 */
+            height: 20vw;
+            max-width: 100px;
+            max-height: 100px;
+            font-size: 18px;
+        }
+        #musicToggle {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.5);
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="startScreen">
+        <h2>赛车游戏</h2>
+        <input type="text" id="username" placeholder="输入用户名" autocomplete="off">
+        <button onclick="startGame()">开始游戏</button>
+    </div>
+    <div id="gameInfo" style="display:none;">
+        <p>用户名: <span id="playerName"></span></p>
+        <p>得分: <span id="score">0</span></p>
+        <p>生命值: <span id="lives">3</span></p>
+        <p>时速: <span id="speed">0</span> km/h</p>
+    </div>
+    <div id="gameOverScreen" style="display:none;">
+        <h2>游戏结束</h2>
+        <p>用户名: <span id="finalPlayerName"></span></p>
+        <p>最终得分: <span id="finalScore"></span></p>
+        <button onclick="location.reload()">重新开始</button>
+    </div>
+    <div id="mobileControls" style="display:none;">
+        <button id="leftBtn" class="controlBtn">←</button>
+        <button id="boostBtn" class="controlBtn">加速</button>
+        <button id="rightBtn" class="controlBtn">→</button>
+    </div>
+
+    <audio id="bgMusic" loop>
+        <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <audio id="collisionSound">
+        <source src="https://www.soundjay.com/mechanical/sounds/car-crash-1.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <button id="musicToggle">🔊</button>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let roadWidth = canvas.width * 0.6;
+        let laneWidth = roadWidth / 3;
+        const carWidth = 60;
+        const carHeight = 100;
+
+        let carPosition ;
+        function updateCarPosition() {
+            carPosition = canvas.height - carHeight - (canvas.height * 0.25); // 将汽车位置设置在屏幕底部四分之一处
+        }
+        updateCarPosition(); 
+        let carLane = 1;
+
+        let roadOffset = 0;
+        let roadSpeed = 5;
+        let gameSpeed = 1;
+        let isBoost = false;
+
+        const obstacles = [];
+        const trees = [];
+        const houses = [];
+        const raindrops = [];
+
+        let username = '';
+        let score = 0;
+        let lives = 3;
+        let gameRunning = false;
+        let isBlinking = false;
+        let blinkStart = 0;
+        let isRaining = false;
+
+        // 预加载图片
+        const carImage = new Image();
+        carImage.src = 'https://img.icons8.com/?size=100&id=bgIaRqQjgnVF&format=png&color=000000';
+        const obstacleImage = new Image();
+        obstacleImage.src = 'https://img.icons8.com/?size=100&id=zciJpTQjQl2Z&format=png&color=000000';
+
+        const treeImages = [
+            'https://img.icons8.com/?size=100&id=6thNdh34W0KQ&format=png&color=000000',
+            'https://img.icons8.com/?size=100&id=81356&format=png&color=000000',
+            'https://img.icons8.com/?size=100&id=5f8g2pjwQtEv&format=png&color=000000',
+            'https://img.icons8.com/?size=100&id=PDr634y5SLIU&format=png&color=000000'
+        ];
+
+        const houseImages = [
+            'https://img.icons8.com/?size=100&id=tWiS2u56odOt&format=png&color=000000',
+            'https://img.icons8.com/?size=100&id=ZgCVMLTLojTF&format=png&color=000000',
+            'https://img.icons8.com/?size=100&id=ikSuz8LZw1wo&format=png&color=000000',
+            'https://img.icons8.com/?size=100&id=80998&format=png&color=000000'
+        ];
+
+        const bgMusic = document.getElementById('bgMusic');
+        const collisionSound = document.getElementById('collisionSound');
+        const musicToggle = document.getElementById('musicToggle');
+        let isMusicPlaying = false;
+
+        function toggleMusic() {
+            if (isMusicPlaying) {
+                bgMusic.pause();
+                musicToggle.textContent = '🔇';
+            } else {
+                bgMusic.play();
+                musicToggle.textContent = '🔊';
+            }
+            isMusicPlaying = !isMusicPlaying;
+        }
+
+        musicToggle.addEventListener('click', toggleMusic);
+
+        const treeImageObjects = treeImages.map(src => {
+            const img = new Image();
+            img.src = src;
+            return img;
+        });
+
+        const houseImageObjects = houseImages.map(src => {
+            const img = new Image();
+            img.src = src;
+            return img;
+        });
+
+        let imagesLoaded = 0;
+        const totalImages = 2 + treeImages.length + houseImages.length;
+
+        function imageLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                document.getElementById('startScreen').style.display = 'block';
+            }
+        }
+
+        carImage.onload = imageLoaded;
+        obstacleImage.onload = imageLoaded;
+        treeImageObjects.forEach(img => img.onload = imageLoaded);
+        houseImageObjects.forEach(img => img.onload = imageLoaded);
+
+        function drawRoad() {
+            ctx.fillStyle = '#808080';
+            ctx.fillRect((canvas.width - roadWidth) / 2, 0, roadWidth, canvas.height);
+
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 5;
+            ctx.setLineDash([20, 20]);
+
+            for (let i = 0; i < 2; i++) {
+                const x = (canvas.width - roadWidth) / 2 + laneWidth * (i + 1);
+                ctx.beginPath();
+                ctx.moveTo(x, (roadOffset - 20) % 40);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+        }
+
+        function drawCar() {
+            const x = (canvas.width - roadWidth) / 2 + laneWidth * carLane + (laneWidth - carWidth) / 2;
+            if (!isBlinking || Math.floor((Date.now() - blinkStart) / 100) % 2 === 0) {
+                ctx.drawImage(carImage, x, carPosition, carWidth, carHeight);
+            }
+        }
+
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                ctx.drawImage(obstacleImage, obstacle.x, obstacle.y, carWidth, carHeight);
+            });
+        }
+
+        function drawTrees() {
+            trees.forEach(tree => {
+                ctx.drawImage(tree.image, tree.x, tree.y, 80, 80);
+            });
+        }
+
+        function drawHouses() {
+            houses.forEach(house => {
+                ctx.drawImage(house.image, house.x, house.y, 120, 120);
+            });
+        }
+
+        function drawRain() {
+            if (!isRaining) return;
+            ctx.fillStyle = 'rgba(174, 194, 224, 0.5)';
+            raindrops.forEach(drop => {
+                ctx.fillRect(drop.x, drop.y, 1, 5);
+                drop.y += drop.speed;
+                drop.x += drop.wind;
+                if (drop.y > canvas.height) {
+                    drop.y = 0;
+                    drop.x = Math.random() * canvas.width;
+                }
+            });
+        }
+
+        function checkCollision(car, obstacle) {
+            return (
+                car.x < obstacle.x + carWidth &&
+                car.x + carWidth > obstacle.x &&
+                car.y < obstacle.y + carHeight &&
+                car.y + carHeight > obstacle.y
+            );
+        }
+
+        function updateGame() {
+            if (!gameRunning) return;
+
+            const currentSpeed = isBoost ? roadSpeed * 1.5 : roadSpeed;
+            roadOffset += currentSpeed * gameSpeed;
+            if (roadOffset >= 40) roadOffset = 0;
+
+            score++;
+            document.getElementById('score').textContent = score;
+
+            gameSpeed = 1 + Math.floor(score / 1000) * 0.1;
+            roadSpeed = 5 * gameSpeed;
+
+            // 更新时速显示
+            const speed = Math.round(currentSpeed * gameSpeed * 10);
+            document.getElementById('speed').textContent = speed;
+
+            const carX = (canvas.width - roadWidth) / 2 + laneWidth * carLane + (laneWidth - carWidth) / 2;
+            const car = { x: carX, y: carPosition };
+
+            obstacles.forEach((obstacle, index) => {
+                obstacle.y += currentSpeed * gameSpeed;
+                if (obstacle.y > canvas.height) {
+                    obstacles.splice(index, 1);
+                }
+                if (checkCollision(car, obstacle) && !isBlinking) {
+                    lives--;
+                    document.getElementById('lives').textContent = lives;
+                    obstacles.splice(index, 1);
+                    if (lives <= 0) {
+                        gameOver();
+                    } else {
+                        isBlinking = true;
+                        blinkStart = Date.now();
+                        setTimeout(() => {
+                            isBlinking = false;
+                        }, 1000);
+                        collisionSound.play();
+                        shakeScreen();
+                    }
+                }
+            });
+
+            trees.forEach((tree, index) => {
+                tree.y += currentSpeed * gameSpeed;
+                if (tree.y > canvas.height) {
+                    trees.splice(index, 1);
+                }
+            });
+
+            houses.forEach((house, index) => {
+                house.y += currentSpeed * gameSpeed;
+                if (house.y > canvas.height) {
+                    houses.splice(index, 1);
+                }
+            });
+
+            if (Math.random() < 0.02 * gameSpeed && obstacles.length < 3) {
+                const lane = Math.floor(Math.random() * 3);
+                const x = (canvas.width - roadWidth) / 2 + laneWidth * lane + (laneWidth - carWidth) / 2;
+                obstacles.push({ x, y: -carHeight });
+            }
+
+            if (Math.random() < 0.05) {
+                const side = Math.random() < 0.5 ? 0 : 1;
+                const x = side === 0 ? (canvas.width - roadWidth) / 2 - 80 : (canvas.width + roadWidth) / 2 + 20;
+                const randomTreeImage = treeImageObjects[Math.floor(Math.random() * treeImageObjects.length)];
+                trees.push({ x, y: -80, image: randomTreeImage });
+            }
+
+            if (Math.random() < 0.02) {
+                const side = Math.random() < 0.5 ? 0 : 1;
+                const x = side === 0 ? (canvas.width - roadWidth) / 2 - 150 : (canvas.width + roadWidth) / 2 + 50;
+                const randomHouseImage = houseImageObjects[Math.floor(Math.random() * houseImageObjects.length)];
+                houses.push({ x, y: -120, image: randomHouseImage });
+            }
+
+            // 随机开始或停止下雨
+            if (Math.random() < 0.001) {
+                isRaining = !isRaining;
+                if (isRaining) {
+                    for (let i = 0; i < 1000; i++) {
+                        raindrops.push({
+                            x: Math.random() * canvas.width,
+                            y: Math.random() * canvas.height,
+                            speed: Math.random() * 5 + 5,
+                            wind: Math.random() * 2 - 1
+                        });
+                    }
+                } else {
+                    raindrops.length = 0;
+                }
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawRoad();
+            drawHouses();
+            drawTrees();
+            drawCar();
+            drawObstacles();
+            drawRain();
+            updateGame();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            username = document.getElementById('username').value;
+            if (username.trim() === '') {
+                alert('请输入用户名');
+                return;
+            }
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameInfo').style.display = 'block';
+            document.getElementById('playerName').textContent = username;
+            
+            // 闪电过渡动画
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            setTimeout(() => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                updateCarPosition(); 
+                gameRunning = true;
+                gameLoop();
+            }, 100);
+
+            // 显示移动端控制按钮
+            if ('ontouchstart' in window) {
+                document.getElementById('mobileControls').style.display = 'flex';
+            }
+
+            // 开始播放背景音乐
+            if (!isMusicPlaying) {
+                toggleMusic();
+            }
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('gameOverScreen').style.display = 'block';
+            document.getElementById('finalPlayerName').textContent = username;
+            document.getElementById('finalScore').textContent = score;
+        }
+
+        function shakeScreen() {
+            const intensity = 5;
+            const duration = 500;
+            const startTime = Date.now();
+            
+            function shake() {
+                const elapsed = Date.now() - startTime;
+                if (elapsed < duration) {
+                    const dx = Math.random() * intensity * 2 - intensity;
+                    const dy = Math.random() * intensity * 2 - intensity;
+                    canvas.style.transform = `translate(${dx}px, ${dy}px)`;
+                    requestAnimationFrame(shake);
+                } else {
+                    canvas.style.transform = 'none';
+                }
+            }
+            
+            shake();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft' && carLane > 0) carLane--;
+            if (e.key === 'ArrowRight' && carLane < 2) carLane++;
+            if (e.key === ' ') isBoost = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === ' ') isBoost = false;
+        });
+
+        // 移动端控制
+        document.getElementById('leftBtn').addEventListener('touchstart', () => {
+            if (carLane > 0) carLane--;
+        });
+
+        document.getElementById('rightBtn').addEventListener('touchstart', () => {
+            if (carLane < 2) carLane++;
+        });
+
+        document.getElementById('boostBtn').addEventListener('touchstart', () => {
+            isBoost = true;
+        });
+
+        document.getElementById('boostBtn').addEventListener('touchend', () => {
+            isBoost = false;
+        });
+
+        // 响应式调整
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            roadWidth = canvas.width * 0.6;
+            laneWidth = roadWidth / 3;
+            updateCarPosition(); // 在这里调用
+        });
+    </script>
+</body>
+</html>
+
